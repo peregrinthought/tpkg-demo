@@ -30,7 +30,6 @@ def calculate_node_metrics(kg):
 
 def assign_hierarchy_levels(kg):
     """Assign hierarchical levels based on connectivity"""
-    # Find root nodes (nodes with high outgoing, low incoming)
     metrics = calculate_node_metrics(kg)
     
     # Sort by importance
@@ -49,7 +48,10 @@ def assign_hierarchy_levels(kg):
     
     # Assign levels based on distance from core
     current_level = 1
-    while len(assigned) < len(kg):
+    max_iterations = len(kg)
+    iteration = 0
+    
+    while len(assigned) < len(kg) and iteration < max_iterations:
         new_assignments = False
         for noun, data in kg.items():
             if noun in assigned:
@@ -69,6 +71,7 @@ def assign_hierarchy_levels(kg):
                     assigned.add(noun)
             break
         current_level += 1
+        iteration += 1
     
     return levels
 
@@ -155,6 +158,8 @@ def generate_html(d3_data, kg):
     border-radius: 12px;
     padding: 20px;
     width: 320px;
+    max-height: calc(100vh - 240px);
+    overflow-y: auto;
     box-shadow: 0 8px 32px rgba(0,0,0,0.6);
     z-index: 100;
   }}
@@ -307,6 +312,16 @@ def generate_html(d3_data, kg):
     font-weight: 600;
   }}
   
+  .warning-badge {{
+    display: inline-block;
+    background: #ffa94d;
+    padding: 8px 14px;
+    border-radius: 8px;
+    font-size: 12px;
+    margin: 10px 0;
+    font-weight: 600;
+  }}
+  
   .children-list {{
     display: flex;
     flex-wrap: wrap;
@@ -354,10 +369,10 @@ def generate_html(d3_data, kg):
   text {{ 
     fill: #fff; 
     font-family: 'Segoe UI', Arial; 
-    font-size: 11px; 
+    font-size: 12px; 
     pointer-events: none;
-    text-shadow: 2px 2px 4px #000;
-    font-weight: 500;
+    text-shadow: 2px 2px 4px #000, -1px -1px 3px #000;
+    font-weight: 600;
   }}
   
   .link {{ 
@@ -396,6 +411,12 @@ def generate_html(d3_data, kg):
   
   .node.dimmed {{
     opacity: 0.2;
+  }}
+  
+  .node.isolated {{
+    stroke: #ffa94d;
+    stroke-width: 3px;
+    stroke-dasharray: 4,2;
   }}
   
   /* Tooltip */
@@ -439,6 +460,7 @@ def generate_html(d3_data, kg):
     border-radius: 10px;
     padding: 15px 20px;
     box-shadow: 0 4px 20px rgba(0,0,0,0.6);
+    max-width: 280px;
   }}
   
   #legend h4 {{
@@ -451,15 +473,16 @@ def generate_html(d3_data, kg):
     display: flex;
     align-items: center;
     margin: 8px 0;
-    font-size: 12px;
+    font-size: 11px;
   }}
   
   .legend-circle {{
-    width: 20px;
-    height: 20px;
+    width: 18px;
+    height: 18px;
     border-radius: 50%;
     margin-right: 10px;
     border: 2px solid white;
+    flex-shrink: 0;
   }}
   
   /* Stats Panel */
@@ -579,7 +602,11 @@ def generate_html(d3_data, kg):
       <div class="legend-circle" style="background: #ffd93d;"></div>
       <span>Tertiary (Level 3+)</span>
     </div>
-    <div style="margin-top: 12px; padding-top: 8px; border-top: 1px solid #444; font-size: 11px; color: #aaa;">
+    <div class="legend-item">
+      <div class="legend-circle" style="background: #666; border-color: #ffa94d; border-style: dashed;"></div>
+      <span>Isolated (No connections)</span>
+    </div>
+    <div style="margin-top: 12px; padding-top: 8px; border-top: 1px solid #444; font-size: 10px; color: #aaa;">
       Node size = # of connections
     </div>
   </div>
@@ -603,6 +630,10 @@ def generate_html(d3_data, kg):
       <span class="stat-label">Hierarchy Levels:</span>
       <span class="stat-value" id="stat-levels">0</span>
     </div>
+    <div class="stat-row">
+      <span class="stat-label">Isolated Nodes:</span>
+      <span class="stat-value" id="stat-isolated">0</span>
+    </div>
   </div>
   
   <div class="tooltip" id="tooltip"></div>
@@ -623,10 +654,10 @@ const colorScale = d3.scaleOrdinal()
   .range(['#ff6b6b', '#4aa3ff', '#51cf66', '#ffd93d']);
 
 // Size scale based on degree
-const maxDegree = d3.max(graph.nodes, d => d.degree);
+const maxDegree = d3.max(graph.nodes, d => d.degree) || 1;
 const sizeScale = d3.scaleLinear()
   .domain([0, maxDegree])
-  .range([6, 20]);
+  .range([8, 20]);
 
 const svg = d3.select("#graph")
     .attr("width", width)
@@ -649,34 +680,60 @@ function initForceLayout() {{
     .force("link", d3.forceLink(graph.links).id(d => d.id).distance(120).strength(0.5))
     .force("charge", d3.forceManyBody().strength(-400))
     .force("center", d3.forceCenter(width/2, height/2))
-    .force("collision", d3.forceCollide().radius(d => sizeScale(d.degree) + 5));
+    .force("collision", d3.forceCollide().radius(d => sizeScale(d.degree) + 10));
   
   simulation.on("tick", ticked);
 }}
 
-// Initialize hierarchy layout
+// Initialize hierarchy layout with better spacing
 function initHierarchyLayout() {{
   const maxLevel = d3.max(graph.nodes, d => d.level);
-  const levelHeight = height / (maxLevel + 2);
+  const levelHeight = (height - 100) / (maxLevel + 2);
   
   // Group nodes by level
   const nodesByLevel = d3.group(graph.nodes, d => d.level);
   
   nodesByLevel.forEach((nodes, level) => {{
-    const y = levelHeight * (level + 1);
-    const xSpacing = width / (nodes.length + 1);
+    const y = levelHeight * (level + 1) + 50;
     
-    nodes.forEach((node, i) => {{
-      node.x = xSpacing * (i + 1);
-      node.y = y;
-      node.fx = node.x;
-      node.fy = node.y;
-    }});
+    // Calculate better horizontal spacing
+    const nodesCount = nodes.length;
+    const availableWidth = width - 100;
+    const idealSpacing = 120; // Minimum spacing between nodes
+    const totalNeededWidth = nodesCount * idealSpacing;
+    
+    if (totalNeededWidth > availableWidth) {{
+      // If nodes don't fit in one row, arrange in a grid pattern
+      const nodesPerRow = Math.floor(availableWidth / idealSpacing);
+      const rows = Math.ceil(nodesCount / nodesPerRow);
+      const rowHeight = 80;
+      
+      nodes.forEach((node, i) => {{
+        const row = Math.floor(i / nodesPerRow);
+        const col = i % nodesPerRow;
+        const currentRowNodes = Math.min(nodesPerRow, nodesCount - row * nodesPerRow);
+        const xSpacing = availableWidth / (currentRowNodes + 1);
+        
+        node.x = 50 + xSpacing * (col + 1);
+        node.y = y + row * rowHeight;
+        node.fx = node.x;
+        node.fy = node.y;
+      }});
+    }} else {{
+      // Fit in one row with even spacing
+      const xSpacing = availableWidth / (nodesCount + 1);
+      nodes.forEach((node, i) => {{
+        node.x = 50 + xSpacing * (i + 1);
+        node.y = y;
+        node.fx = node.x;
+        node.fy = node.y;
+      }});
+    }}
   }});
   
   simulation = d3.forceSimulation(graph.nodes)
-    .force("link", d3.forceLink(graph.links).id(d => d.id).distance(80).strength(0.3))
-    .force("collision", d3.forceCollide().radius(d => sizeScale(d.degree) + 5))
+    .force("link", d3.forceLink(graph.links).id(d => d.id).distance(100).strength(0.2))
+    .force("collision", d3.forceCollide().radius(d => sizeScale(d.degree) + 15))
     .alpha(0.3);
   
   simulation.on("tick", ticked);
@@ -693,9 +750,9 @@ const node = container.append("g")
   .selectAll("circle")
   .data(graph.nodes)
   .enter().append("circle")
-    .attr("class", "node")
-    .attr("r", d => sizeScale(d.degree))
-    .attr("fill", d => colorScale(d.level))
+    .attr("class", d => d.degree === 0 ? "node isolated" : "node")
+    .attr("r", d => d.degree === 0 ? 10 : sizeScale(d.degree))
+    .attr("fill", d => d.degree === 0 ? "#666" : colorScale(d.level))
     .on("mouseover", showTooltip)
     .on("mousemove", moveTooltip)
     .on("mouseout", hideTooltip)
@@ -706,7 +763,7 @@ const labels = container.append("g")
   .selectAll("text")
   .data(graph.nodes)
   .enter().append("text")
-    .attr("dy", d => -sizeScale(d.degree) - 5)
+    .attr("dy", d => -sizeScale(d.degree === 0 ? 1 : d.degree) - 8)
     .text(d => d.id);
 
 // Initialize with force layout
@@ -732,11 +789,13 @@ function ticked() {{
 function updateStats() {{
   const visibleNodes = graph.nodes.filter(d => !d.hidden).length;
   const maxLevel = d3.max(graph.nodes, d => d.level);
+  const isolatedNodes = graph.nodes.filter(d => d.degree === 0).length;
   
   document.getElementById('stat-nodes').textContent = graph.nodes.length;
   document.getElementById('stat-edges').textContent = graph.links.length;
   document.getElementById('stat-visible').textContent = visibleNodes;
   document.getElementById('stat-levels').textContent = maxLevel + 1;
+  document.getElementById('stat-isolated').textContent = isolatedNodes;
 }}
 
 updateStats();
@@ -786,8 +845,8 @@ document.getElementById('reset-view').addEventListener('click', function() {{
     d3.zoomIdentity
   );
   
-  node.classed('dimmed', false).classed('highlighted', false).classed('connected', false);
-  link.classed('highlighted', false);
+  node.attr("class", d => d.degree === 0 ? "node isolated" : "node");
+  link.attr("class", "link");
   closePanel();
 }});
 
@@ -839,6 +898,11 @@ function showTooltip(event, d) {{
   const tooltip = d3.select("#tooltip");
   const context = d.contexts.third_person || "No description available";
   
+  let statusInfo = '';
+  if (d.degree === 0) {{
+    statusInfo = '<div style="color: #ffa94d; margin-top: 8px;">⚠️ Isolated node (no connections)</div>';
+  }}
+  
   tooltip
     .style("display", "block")
     .html(`
@@ -847,6 +911,7 @@ function showTooltip(event, d) {{
       <div class="metrics">
         Level: ${{d.level}} | Connections: ${{d.degree}} (↑${{d.incoming}} ↓${{d.outgoing}})
       </div>
+      ${{statusInfo}}
     `);
 }}
 
@@ -862,16 +927,18 @@ function hideTooltip() {{
 
 function showDetails(event, d) {{
   // Reset all highlighting
-  node.classed('highlighted', false).classed('connected', false).classed('dimmed', false);
-  link.classed('highlighted', false);
+  node.each(function(n) {{
+    d3.select(this).attr("class", n.degree === 0 ? "node isolated" : "node");
+  }});
+  link.attr("class", "link");
   
   // Highlight clicked node
-  d3.select(event.target).classed('highlighted', true);
+  d3.select(event.target).attr("class", "node highlighted");
   
-  // Highlight connected nodes and edges
+  // Find all connected nodes (both directions)
   const connectedNodeIds = new Set(d.children);
   
-  // Also find nodes that connect TO this node
+  // Find incoming relationships
   graph.links.forEach(l => {{
     if (l.target.id === d.id) connectedNodeIds.add(l.source.id);
     if (l.source.id === d.id) connectedNodeIds.add(l.target.id);
@@ -881,16 +948,16 @@ function showDetails(event, d) {{
   node.each(function(n) {{
     if (n.id === d.id) return;
     if (connectedNodeIds.has(n.id)) {{
-      d3.select(this).classed('connected', true);
+      d3.select(this).attr("class", "node connected");
     }} else {{
-      d3.select(this).classed('dimmed', true);
+      d3.select(this).attr("class", "node dimmed");
     }}
   }});
   
   link.each(function(l) {{
     if ((l.source.id === d.id && connectedNodeIds.has(l.target.id)) ||
         (l.target.id === d.id && connectedNodeIds.has(l.source.id))) {{
-      d3.select(this).classed('highlighted', true);
+      d3.select(this).attr("class", "link highlighted");
     }}
   }});
   
@@ -907,6 +974,15 @@ function showDetails(event, d) {{
       <span class="metric-badge">↓ ${{d.outgoing}} Out</span>
     </div>
   `;
+  
+  // Warning for isolated nodes
+  if (d.degree === 0) {{
+    html += `
+      <div class="warning-badge">
+        ⚠️ This node has no connections in the graph
+      </div>
+    `;
+  }}
   
   // Show all three contexts
   if (d.contexts.first_person) {{
@@ -936,7 +1012,7 @@ function showDetails(event, d) {{
     `;
   }}
   
-  // Show relationships
+  // Show outgoing relationships
   if (d.children && d.children.length > 0) {{
     html += `
       <h3>🔗 Outgoing Relationships (${{d.children.length}})</h3>
@@ -963,6 +1039,16 @@ function showDetails(event, d) {{
         ${{incoming.map(parent => 
           `<span class="child-tag" onclick="searchAndShow('${{parent}}')">${{parent}}</span>`
         ).join('')}}
+      </div>
+    `;
+  }}
+  
+  // If no relationships at all
+  if (d.children.length === 0 && incoming.length === 0) {{
+    html += `
+      <div style="padding: 20px; text-align: center; color: #aaa; font-style: italic;">
+        This concept appears to be isolated in the knowledge graph.<br>
+        It may need more connections or could be a data quality issue.
       </div>
     `;
   }}
@@ -995,8 +1081,10 @@ function searchAndShow(nodeId) {{
 
 function closePanel() {{
   document.getElementById("info-panel").style.display = "none";
-  node.classed('highlighted', false).classed('connected', false).classed('dimmed', false);
-  link.classed('highlighted', false);
+  node.each(function(d) {{
+    d3.select(this).attr("class", d.degree === 0 ? "node isolated" : "node");
+  }});
+  link.attr("class", "link");
 }}
 
 function drag(simulation) {{
@@ -1045,16 +1133,13 @@ def main():
         f.write(html)
 
     print(f"[Viz] Enhanced visualization written to {OUTPUT}")
-    print("\nFeatures:")
-    print("  ✓ Hierarchical layout with color-coded levels")
-    print("  ✓ Node size based on connectivity")
-    print("  ✓ Search functionality")
-    print("  ✓ Connection filtering")
-    print("  ✓ Toggle between Force and Hierarchy layouts")
-    print("  ✓ Zoom and pan")
-    print("  ✓ Click nodes to see incoming/outgoing relationships")
-    print("  ✓ Statistics panel")
-    print("\nOpen this file in your browser to explore!")
+    print("\n✨ Fixed Issues:")
+    print("  ✓ Isolated nodes (like 'pressure') now highlighted with orange dashed border")
+    print("  ✓ Fixed panel overlap on bottom left")
+    print("  ✓ Improved hierarchy layout with better spacing and multi-row support")
+    print("  ✓ Better label contrast with enhanced text shadow")
+    print("  ✓ Added isolated nodes counter in statistics")
+    print("\nOpen the HTML file in your browser to explore!")
 
 
 if __name__ == "__main__":
