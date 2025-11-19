@@ -11,6 +11,16 @@ The graph is recursively expanded and visualized using an interactive **D3 force
 
 ---
 
+## Setup Your OpenAI API Key
+
+Before running anything, you **must create a `.env` file** in the project root:
+OPENAI_API_KEY=your_key_here
+
+> ⚠️ **Do NOT commit this file to GitHub.**  
+> Your `.env` is automatically read by the project (`tpkg/utils.py` + `dotenv`).
+
+---
+
 ## 🔧 Prerequisites
 
 (Optional but recommended) Create and activate a virtual environment:
