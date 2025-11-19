@@ -1,4 +1,3 @@
-````md
 # Tri-Perspective Knowledge Graph — Demo
 
 This project builds a **multi-view knowledge graph** using three complementary perspectives for each noun extracted from text:
