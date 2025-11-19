@@ -77,7 +77,7 @@ def assign_hierarchy_levels(kg):
 
 
 def build_d3_graph(kg):
-    MAX_EDGES_PER_NODE = 8
+    # REMOVED EDGE LIMIT - show all connections!
     
     # Calculate metrics and hierarchy
     metrics = calculate_node_metrics(kg)
@@ -100,8 +100,9 @@ def build_d3_graph(kg):
     links = []
     seen = set()
 
+    # Create ALL edges (no limit)
     for parent, data in kg.items():
-        children = data.get("children", [])[:MAX_EDGES_PER_NODE]
+        children = data.get("children", [])  # No slicing - get all children!
 
         for child in children:
             if parent == child:
@@ -158,7 +159,7 @@ def generate_html(d3_data, kg):
     border-radius: 12px;
     padding: 20px;
     width: 320px;
-    max-height: calc(100vh - 240px);
+    max-height: calc(100vh - 280px);
     overflow-y: auto;
     box-shadow: 0 8px 32px rgba(0,0,0,0.6);
     z-index: 100;
@@ -369,9 +370,9 @@ def generate_html(d3_data, kg):
   text {{ 
     fill: #fff; 
     font-family: 'Segoe UI', Arial; 
-    font-size: 12px; 
+    font-size: 11px; 
     pointer-events: none;
-    text-shadow: 2px 2px 4px #000, -1px -1px 3px #000;
+    text-shadow: 2px 2px 4px #000, -1px -1px 3px #000, 0 0 5px #000;
     font-weight: 600;
   }}
   
@@ -450,11 +451,11 @@ def generate_html(d3_data, kg):
     color: #aaa;
   }}
   
-  /* Legend */
+  /* Legend - Better positioning */
   #legend {{
     position: absolute;
     bottom: 20px;
-    left: 20px;
+    left: 360px;
     background: rgba(20, 20, 30, 0.95);
     border: 2px solid #4aa3ff;
     border-radius: 10px;
@@ -583,7 +584,7 @@ def generate_html(d3_data, kg):
     <div id="panel-content"></div>
   </div>
   
-  <!-- Legend -->
+  <!-- Legend - Moved to not overlap -->
   <div id="legend">
     <h4>📍 Node Hierarchy</h4>
     <div class="legend-item">
@@ -680,33 +681,35 @@ function initForceLayout() {{
     .force("link", d3.forceLink(graph.links).id(d => d.id).distance(120).strength(0.5))
     .force("charge", d3.forceManyBody().strength(-400))
     .force("center", d3.forceCenter(width/2, height/2))
-    .force("collision", d3.forceCollide().radius(d => sizeScale(d.degree) + 10));
+    .force("collision", d3.forceCollide().radius(d => sizeScale(d.degree) + 15));
   
   simulation.on("tick", ticked);
 }}
 
-// Initialize hierarchy layout with better spacing
+// Initialize hierarchy layout with anti-overlap
 function initHierarchyLayout() {{
   const maxLevel = d3.max(graph.nodes, d => d.level);
-  const levelHeight = (height - 100) / (maxLevel + 2);
+  const levelHeight = (height - 150) / (maxLevel + 2);
   
   // Group nodes by level
   const nodesByLevel = d3.group(graph.nodes, d => d.level);
   
   nodesByLevel.forEach((nodes, level) => {{
-    const y = levelHeight * (level + 1) + 50;
+    const y = levelHeight * (level + 1) + 80;
     
-    // Calculate better horizontal spacing
+    // Sort nodes by their connections to create better layout
+    nodes.sort((a, b) => b.degree - a.degree);
+    
+    // Calculate spacing
     const nodesCount = nodes.length;
-    const availableWidth = width - 100;
-    const idealSpacing = 120; // Minimum spacing between nodes
-    const totalNeededWidth = nodesCount * idealSpacing;
+    const availableWidth = width - 200;
+    const minSpacing = 140; // Increased minimum spacing
+    const totalNeededWidth = nodesCount * minSpacing;
     
     if (totalNeededWidth > availableWidth) {{
-      // If nodes don't fit in one row, arrange in a grid pattern
-      const nodesPerRow = Math.floor(availableWidth / idealSpacing);
-      const rows = Math.ceil(nodesCount / nodesPerRow);
-      const rowHeight = 80;
+      // Multi-row grid layout with better spacing
+      const nodesPerRow = Math.floor(availableWidth / minSpacing);
+      const rowHeight = 100; // Increased row height
       
       nodes.forEach((node, i) => {{
         const row = Math.floor(i / nodesPerRow);
@@ -714,16 +717,16 @@ function initHierarchyLayout() {{
         const currentRowNodes = Math.min(nodesPerRow, nodesCount - row * nodesPerRow);
         const xSpacing = availableWidth / (currentRowNodes + 1);
         
-        node.x = 50 + xSpacing * (col + 1);
+        node.x = 100 + xSpacing * (col + 1);
         node.y = y + row * rowHeight;
         node.fx = node.x;
         node.fy = node.y;
       }});
     }} else {{
-      // Fit in one row with even spacing
+      // Single row with generous spacing
       const xSpacing = availableWidth / (nodesCount + 1);
       nodes.forEach((node, i) => {{
-        node.x = 50 + xSpacing * (i + 1);
+        node.x = 100 + xSpacing * (i + 1);
         node.y = y;
         node.fx = node.x;
         node.fy = node.y;
@@ -731,9 +734,12 @@ function initHierarchyLayout() {{
     }}
   }});
   
+  // Apply light forces to prevent overlap
   simulation = d3.forceSimulation(graph.nodes)
-    .force("link", d3.forceLink(graph.links).id(d => d.id).distance(100).strength(0.2))
-    .force("collision", d3.forceCollide().radius(d => sizeScale(d.degree) + 15))
+    .force("link", d3.forceLink(graph.links).id(d => d.id).distance(100).strength(0.1))
+    .force("collision", d3.forceCollide().radius(d => sizeScale(d.degree) + 20))
+    .force("x", d3.forceX(d => d.fx).strength(0.5))
+    .force("y", d3.forceY(d => d.fy).strength(0.5))
     .alpha(0.3);
   
   simulation.on("tick", ticked);
@@ -1123,7 +1129,7 @@ def main():
     print("[Viz] Loading KG...")
     kg = json.load(open(INPUT))
 
-    print("[Viz] Building D3 graph with hierarchy...")
+    print("[Viz] Building D3 graph with ALL connections...")
     d3_data = build_d3_graph(kg)
 
     print("[Viz] Writing HTML...")
@@ -1134,12 +1140,13 @@ def main():
 
     print(f"[Viz] Enhanced visualization written to {OUTPUT}")
     print("\n✨ Fixed Issues:")
-    print("  ✓ Isolated nodes (like 'pressure') now highlighted with orange dashed border")
-    print("  ✓ Fixed panel overlap on bottom left")
-    print("  ✓ Improved hierarchy layout with better spacing and multi-row support")
-    print("  ✓ Better label contrast with enhanced text shadow")
-    print("  ✓ Added isolated nodes counter in statistics")
-    print("\nOpen the HTML file in your browser to explore!")
+    print("  ✓ REMOVED edge limit - all connections now visible!")
+    print("  ✓ 'pressure' and similar nodes will now show ALL their connections")
+    print("  ✓ Better anti-overlap in hierarchy mode (140px min spacing, 100px row height)")
+    print("  ✓ Legend moved to left: 360px to avoid control panel overlap")
+    print("  ✓ Stronger collision forces to prevent node stacking")
+    print("  ✓ Nodes sorted by degree for better visual layout")
+    print("\nOpen the HTML file in your browser to see all connections!")
 
 
 if __name__ == "__main__":
