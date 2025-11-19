@@ -455,7 +455,7 @@ def generate_html(d3_data, kg):
   #legend {{
     position: absolute;
     bottom: 20px;
-    left: 360px;
+    left: 20px;
     background: rgba(20, 20, 30, 0.95);
     border: 2px solid #4aa3ff;
     border-radius: 10px;
